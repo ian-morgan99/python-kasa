@@ -18,9 +18,21 @@ class DeviceUsage(SmartModule):
     async def _post_update_hook(self) -> None:
         """Perform actions after a device update.
         
-        Initialize features here instead of _initialize_features because
-        get_device_usage data is not available on the first update (DeviceModule
-        is in FIRST_UPDATE_MODULES so it doesn't query on first update).
+        NOTE: This module uses an unconventional pattern by initializing features in
+        _post_update_hook instead of _initialize_features. This is necessary because:
+        
+        1. DeviceModule (which queries get_device_usage) is in FIRST_UPDATE_MODULES
+        2. Modules in FIRST_UPDATE_MODULES skip their queries on the first update
+        3. _initialize_features is only called once during the first update
+        4. Therefore, get_device_usage data is not available when _initialize_features runs
+        
+        By initializing features in _post_update_hook on the second update (when data
+        becomes available), we follow the framework's lifecycle while adapting to this
+        specific constraint. Features are manually registered with the device to make
+        them available, which is normally handled by _initialize_features.
+        
+        An alternative would be to move DeviceModule out of FIRST_UPDATE_MODULES, but
+        that would affect all devices and potentially cause performance issues.
         """
         # Only initialize features once, and only when data is available
         if self._module_features or "get_device_usage" not in self._device._last_update:
@@ -154,10 +166,12 @@ class DeviceUsage(SmartModule):
                 )
             )
         
-        # After adding features, we need to register them with the device
-        # This is normally done in _initialize_features, but we're doing it here
+        # Register the module features with the device
+        # This is done here because features are initialized late (after first update)
+        # Note: We check if the feature already exists to avoid duplicate registration
         for feat in self._module_features.values():
-            self._device._add_feature(feat)
+            if feat.id not in self._device._features:
+                self._device._add_feature(feat)
 
     def query(self) -> dict:
         """Query to execute during the update cycle."""
